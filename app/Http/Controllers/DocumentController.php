@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use App\Models\Document;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -26,19 +27,42 @@ class DocumentController extends Controller
         return response()->json(['message' => 'Document uploaded successfully', 'document' => $document], 201);
     }
 
-    // Search for documents by user social number
     public function search(Request $request)
     {
-        $request->validate([
-            'social_number' => 'required|exists:users,social_number',
-        ]);
-
-        $documents = Document::whereHas('user', function ($query) use ($request) {
-            $query->where('social_number', $request->social_number);
-        })->get();
-
-        return response()->json(['documents' => $documents], 200);
+        $socialNumber = $request->query('social_number');
+    
+        // Validate the input
+        if ($socialNumber == null) {
+            return response()->json([
+                'message' => 'Social number is required.',
+            ], 400);
+        }
+    
+        // Find the user by social number
+        $user = User::where('social_number', $socialNumber)->first();
+    
+        if (!$user) {
+            return response()->json([
+                'message' => 'No user found with the given social number.',
+            ], 404);
+        }
+    
+        // Retrieve the user's documents
+        $documents = Document::where('user_id', $user->id)->get();
+    
+        // Return documents in JSON format
+        return response()->json([
+            'message' => 'Documents retrieved successfully.',
+            'documents' => $documents->map(function ($doc) {
+                return [
+                    'id' => $doc->id,
+                    'created_at' => $doc->created_at->timezone('Asia/Riyadh')->format('d M Y, h:i A'), // Format for Arabian Standard Time
+                    'file_path' => $doc->file_path,
+                ];
+            }),
+        ], 200);
     }
+    
 
     // Download a document by ID
     public function download($id)

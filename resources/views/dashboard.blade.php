@@ -137,17 +137,22 @@
                     }
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'An unexpected error occurred.');
+                }
+
                 const data = await response.json();
 
                 if (data.documents && data.documents.length > 0) {
                     // Display the documents
                     const documentsHtml = data.documents.map(doc => `
-                        <div class="mt-2 p-4 border border-gray-300 rounded-md">
+                        <div class="mt-2 p-4 border border-gray-300 rounded-md bg-gray-800 text-white">
                             <p>Document ID: ${doc.id}</p>
                             <p>Uploaded At: ${doc.created_at}</p>
                             <a 
                                 href="/documents/download/${doc.id}" 
-                                class="text-blue-500 underline">
+                                class="text-blue-400 underline">
                                 Download
                             </a>
                         </div>
@@ -158,11 +163,13 @@
                     searchResults.innerHTML = `<p class="mt-2 text-red-500">No documents found</p>`;
                 }
             } catch (error) {
-                alert('An error occurred while searching: ' + error.message);
+                // Display error message
+                searchResults.innerHTML = `<p class="mt-2 text-red-500">${error.message}</p>`;
             } finally {
                 // Hide loading indicator
                 searchLoadingIndicator.classList.add('hidden');
             }
         }
+
     </script>
 </x-app-layout>
