@@ -12,16 +12,20 @@ class DocumentController extends Controller
     public function upload(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:pdf,doc,docx,jpg,png|max:2048',
-            'user_id' => 'required|exists:users,id',
+            'file' => 'required|file|mimes:pdf,doc,docx,txt|max:2048',
+            //'user_id' => 'required|exists:users,id',
         ]);
 
         $file = $request->file('file');
-        $filePath = $file->store('documents', 'public');
+        $filePath = $file->store('documents', 'local');
+
+        $fileContents = file_get_contents($file->getRealPath());
+        $fileHash = hash('sha256', $fileContents);
 
         $document = Document::create([
             'user_id' => $request->user_id,
             'file_path' => $filePath,
+            'file_hash' => $fileHash,
         ]);
 
         return response()->json(['message' => 'Document uploaded successfully', 'document' => $document], 201);
@@ -67,13 +71,29 @@ class DocumentController extends Controller
     // Download a document by ID
     public function download($id)
     {
+        // $document = Document::findOrFail($id);
+        // $filePath = $document->file_path;
+
+        // if (Storage::disk('public')->exists($filePath)) {
+        //     return Storage::disk('public')->download($filePath);
+        // }
+
+        // return response()->json(['message' => 'File not found'], 404);
+
+
         $document = Document::findOrFail($id);
+
+        // Recalculate the file's hash
         $filePath = $document->file_path;
-
-        if (Storage::disk('public')->exists($filePath)) {
-            return Storage::disk('public')->download($filePath);
+        $fileContents = Storage::get($filePath);
+        $calculatedHash = hash('sha256', $fileContents);
+    
+        // Compare the calculated hash with the stored hash
+        if ($calculatedHash !== $document->file_hash) {
+            return response()->json(['message' => 'File integrity check failed. The file may have been tampered with.'], 403);
         }
-
-        return response()->json(['message' => 'File not found'], 404);
+    
+        // Serve the file for download
+        return Storage::download($filePath);
     }
 }

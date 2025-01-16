@@ -9,7 +9,12 @@ class Document extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['user_id', 'file_path'];
+    protected $fillable = ['user_id', 'file_path', 'file_hash'];
+
+    // to encrypt the stored document hash
+    // protected $casts = [
+    //     'file_hash' => 'encrypted',
+    // ];
 
     // Relationship with User model
     public function user()
