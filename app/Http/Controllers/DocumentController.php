@@ -8,6 +8,7 @@ use phpseclib3\Crypt\AES;
 use phpseclib3\Crypt\RSA;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 class DocumentController extends Controller
@@ -74,6 +75,12 @@ class DocumentController extends Controller
             'iv' => 'required',
         ]);
 
+
+        info('print', $data);
+
+        //Log::emergency('An informational message.');
+    
+    
         info('print', $data);
 
         //Log::emergency('An informational message.');
@@ -93,17 +100,32 @@ class DocumentController extends Controller
         $filePath = "documents/{$fileName}";
         Storage::put($filePath, $decryptedFileContents);
     
-        // Store file info in the database
+        // Calculate file hash
         $fileHash = hash('sha256', $decryptedFileContents);
+    
+        // Step 1: Request signature from CA
+        $signatureResponse = Http::attach(
+            'file', $decryptedFileContents, $fileName
+        )->post('http://127.0.0.1:5000/sign_doc');
+    
+        if (!$signatureResponse->ok()) {
+            return response()->json(['error' => 'Failed to get the signature from CA'], 500);
+        }
+    
+        $signature = $signatureResponse->json()['signature'];
+    
+        // Step 2: Store file info and signature in the database
         $document = Document::create([
             'user_id' => $request->user_id,
             'file_path' => $filePath,
             'file_hash' => $fileHash,
+            'signature' => $signature, // Store the signature
         ]);
         //info('print', ["saved"]);
     
         return response()->json(['message' => 'Document uploaded successfully', 'document' => $document], 201);
     }
+    
     
 
 

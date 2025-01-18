@@ -9,7 +9,7 @@ class Document extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['user_id', 'file_path', 'file_hash'];
+    protected $fillable = ['user_id', 'file_path', 'file_hash', 'signature'];
 
     // to encrypt the stored document hash
     // protected $casts = [
