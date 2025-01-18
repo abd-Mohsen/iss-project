@@ -282,9 +282,10 @@
 
                 console.log("after json");
 
-                // Step 2: Fetch the user's private key (or use it from memory)
+                // Step 2: Fetch the user's private key by prompting them to upload it
                 const privateKeyPem = await promptUserForPrivateKey();
-                
+
+                // Import the user's private key
                 const privateKey = await window.crypto.subtle.importKey(
                     'pkcs8',
                     convertPemToArrayBuffer(privateKeyPem),
@@ -322,7 +323,7 @@
                 const blob = new Blob([new Uint8Array(decryptedFile)]);
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                
+
                 // Set the filename to include the extension received from the server
                 const fileName = `downloaded_file.${file_extension}`; // Use file_extension received from the server
                 link.download = fileName; // Set the download attribute to the filename with the extension
@@ -333,6 +334,46 @@
             }
         }
 
+        // Utility function to prompt the user to upload their private key file
+        async function promptUserForPrivateKey() {
+            return new Promise((resolve, reject) => {
+                // Create a file input element dynamically
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.pem'; // Optional: Limit to PEM files
+                fileInput.style.display = 'none'; // Hide the file input
+
+                // Append the input to the body
+                document.body.appendChild(fileInput);
+
+                // Listen for file selection
+                fileInput.addEventListener('change', async () => {
+                    if (fileInput.files.length === 0) {
+                        reject(new Error('No file selected.'));
+                        return;
+                    }
+
+                    const file = fileInput.files[0];
+
+                    try {
+                        // Read the file contents as text
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            const privateKeyPem = event.target.result;
+                            resolve(privateKeyPem); // Resolve the promise with the file content
+                        };
+                        reader.onerror = () => reject(new Error('Failed to read the file.'));
+                        reader.readAsText(file);
+                    } finally {
+                        // Remove the file input from the DOM
+                        document.body.removeChild(fileInput);
+                    }
+                });
+
+                // Programmatically click the file input to open the file picker dialog
+                fileInput.click();
+            });
+        }
 
         // Utility function to convert Base64 to ArrayBuffer
         function base64ToArrayBuffer(base64) {
@@ -357,6 +398,7 @@
             }
             return binaryDer.buffer;
         }
+
 
 
     </script>
