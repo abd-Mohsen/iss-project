@@ -64,6 +64,7 @@
     </div>
 
     <script>
+
         async function uploadFile() {
             const fileInput = document.getElementById('fileInput');
             const loadingIndicator = document.getElementById('loadingIndicator');
@@ -79,21 +80,75 @@
             loadingIndicator.classList.remove('hidden');
             successMessage.classList.add('hidden');
 
-            // Prepare the file and user ID
             const file = fileInput.files[0];
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('user_id', {{ auth()->id() }}); // Pass the authenticated user's ID
+            const fileContents = await file.arrayBuffer(); // Read the file contents as ArrayBuffer
+            const fileExtension = file.name.split('.').pop();
 
             try {
-                // Send the upload request to the server
-                const response = await fetch("{{ route('documents.upload') }}", {
+                // Step 1: Fetch the server's public RSA key
+                const publicKeyResponse = await fetch('/keys/server-public-key'); // Correct endpoint
+                if (!publicKeyResponse.ok) {
+                    throw new Error('Failed to fetch server public key');
+                }
+                const publicKeyPem = await publicKeyResponse.text();
+
+                // Import the server's public key
+                const publicKey = await window.crypto.subtle.importKey(
+                    'spki',
+                    convertPemToArrayBuffer(publicKeyPem),
+                    { name: 'RSA-OAEP', hash: 'SHA-256' },
+                    false,
+                    ['encrypt']
+                );
+
+                // Step 2: Generate a random AES key and IV
+                const aesKey = window.crypto.getRandomValues(new Uint8Array(32)); // 256-bit AES key
+                const iv = window.crypto.getRandomValues(new Uint8Array(16)); // Initialization vector
+
+                // Step 3: Encrypt the file using AES-CBC
+                const aesCryptoKey = await window.crypto.subtle.importKey(
+                    'raw',
+                    aesKey.buffer,
+                    { name: 'AES-CBC', length: 256 },
+                    false,
+                    ['encrypt']
+                );
+                const encryptedFile = await window.crypto.subtle.encrypt(
+                    { name: 'AES-CBC', iv },
+                    aesCryptoKey,
+                    fileContents
+                );
+
+                // Step 4: Encrypt the AES key using the server's RSA public key
+                const encryptedAesKey = await window.crypto.subtle.encrypt(
+                    { name: 'RSA-OAEP' },
+                    publicKey,
+                    aesKey.buffer
+                );
+
+                // Step 5: Prepare the FormData with encrypted data, AES key, and IV
+                const formData = new FormData();
+                formData.append('encrypted_data', arrayBufferToBase64(encryptedFile));
+                formData.append('encrypted_aes_key', arrayBufferToBase64(encryptedAesKey));
+                formData.append('iv', arrayBufferToBase64(iv));
+                formData.append('file_extension', fileExtension);
+                formData.append('user_id', {{ auth()->id() }}); // Pass the authenticated user's ID
+
+                // Step 6: Send the upload request to the server
+                const response = await fetch("/documents/upload", {
                     method: 'POST',
                     headers: {
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'accept': 'application/json'
                     },
                     body: formData
                 });
+
+                console.log(await response.text());
+
+                // for (let [key, value] of formData.entries()) {
+                //     console.log(`${key}: ${value}`);
+                // }
 
                 if (!response.ok) {
                     throw new Error('File upload failed');
@@ -106,11 +161,104 @@
                 // Handle errors
                 loadingIndicator.classList.add('hidden');
                 alert('An error occurred while uploading the file: ' + error.message);
+                console.log('An error occurred while uploading the file: ' + error.message);
             } finally {
                 // Reset the file input
                 fileInput.value = '';
             }
         }
+
+        // Utility function to convert PEM to ArrayBuffer
+        function convertPemToArrayBuffer(pem) {
+            const pemHeader = "-----BEGIN PUBLIC KEY-----";
+            const pemFooter = "-----END PUBLIC KEY-----";
+            const pemContents = pem.replace(pemHeader, "").replace(pemFooter, "").replace(/\s+/g, "");
+            const binaryDerString = atob(pemContents);
+            const binaryDer = new Uint8Array(binaryDerString.length);
+            for (let i = 0; i < binaryDerString.length; i++) {
+                binaryDer[i] = binaryDerString.charCodeAt(i);
+            }
+            return binaryDer.buffer;
+        }
+
+        // Utility function to convert ArrayBuffer to Base64
+        function arrayBufferToBase64(buffer) {
+            const binary = String.fromCharCode.apply(null, new Uint8Array(buffer));
+            return btoa(binary);
+        }
+
+
+        // async function fetchServerPublicKey() {
+        //     try {
+        //         // Fetch the public key from the server
+        //         const publicKeyResponse = await fetch('/keys/server-public-key');
+                
+        //         if (!publicKeyResponse.ok) {
+        //             throw new Error('Failed to fetch server public key');
+        //         }
+
+        //         const publicKeyPem = await publicKeyResponse.text();
+        //         console.log("Public Key PEM:", publicKeyPem);
+
+        //         // Import the public key for use with WebCrypto
+        //         const publicKey = await window.crypto.subtle.importKey(
+        //             'spki', // Public key format
+        //             convertPemToArrayBuffer(publicKeyPem), // Convert PEM to ArrayBuffer
+        //             {
+        //                 name: 'RSA-OAEP',
+        //                 hash: 'SHA-256'
+        //             },
+        //             false, // Not extractable
+        //             ['encrypt']
+        //         );
+
+        //         return publicKey;
+        //     } catch (error) {
+        //         console.error('Error fetching or importing public key:', error.message);
+        //         throw error;
+        //     }
+        // }
+
+        // Utility to convert PEM to ArrayBuffer
+        // function convertPemToArrayBuffer(pem) {
+        //     // Remove PEM header/footer and line breaks
+        //     const pemHeader = "-----BEGIN PUBLIC KEY-----";
+        //     const pemFooter = "-----END PUBLIC KEY-----";
+        //     const pemContents = pem.replace(pemHeader, "").replace(pemFooter, "").replace(/\s+/g, "");
+        //     const binaryDerString = atob(pemContents); // Decode Base64
+        //     const binaryDer = new Uint8Array(binaryDerString.length);
+
+        //     for (let i = 0; i < binaryDerString.length; i++) {
+        //         binaryDer[i] = binaryDerString.charCodeAt(i);
+        //     }
+
+        //     return binaryDer.buffer;
+        // }
+
+
+        // Helper function to import the server's public key
+        async function importServerPublicKey(pemKey) {
+            const pemContents = pemKey
+                .replace(/-----BEGIN PUBLIC KEY-----/, '')
+                .replace(/-----END PUBLIC KEY-----/, '')
+                .replace(/\s/g, '');
+            const binaryDerString = atob(pemContents);
+            const binaryDer = Uint8Array.from(binaryDerString, char => char.charCodeAt(0));
+            return await window.crypto.subtle.importKey(
+                'spki',
+                binaryDer.buffer,
+                { name: 'RSA-OAEP', hash: 'SHA-256' },
+                false,
+                ['encrypt']
+            );
+        }
+
+        // Helper function to convert ArrayBuffer to Base64
+        // function arrayBufferToBase64(buffer) {
+        //     const binary = String.fromCharCode(...new Uint8Array(buffer));
+        //     return btoa(binary);
+        // }
+
 
         async function searchDocuments() {
             const searchInput = document.getElementById('search_social_number');

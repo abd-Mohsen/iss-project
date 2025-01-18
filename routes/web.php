@@ -1,7 +1,8 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\KeyController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DocumentController;
 
 /*
@@ -33,6 +34,9 @@ Route::middleware('auth')->group(function () {
 Route::post('/documents/upload', [DocumentController::class, 'upload'])->name('documents.upload');
 Route::get('/documents/search', [DocumentController::class, 'search'])->name('documents.search');
 Route::get('/documents/download/{id}', [DocumentController::class, 'download'])->name('documents.download');
+
+Route::get('/keys/server-public-key', [KeyController::class, 'getServerPublicKey']);
+
 
 
 require __DIR__.'/auth.php';
