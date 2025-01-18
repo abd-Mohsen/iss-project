@@ -14,30 +14,40 @@ class DocumentController extends Controller
 {
     private $privateKeyPath = 'keys/server_private_key.pem';
     private $publicKeyPath = 'keys/server_public_key.pem';
+    private $clientPublicKeyPath = 'keys/client_public_key.pem';
+    private $clientPrivateKeyPath = 'keys/client_private_key.pem';
 
-    // Encrypt file using hybrid encryption
+
     private function encryptFile($fileContents)
     {
-        $publicKey = RSA::loadPublicKey(Storage::get($this->publicKeyPath));
+        // Load the client's public key (not the server's public key)
+        $publicKey = RSA::loadPublicKey(Storage::get($this->clientPublicKeyPath));
 
-        // Generate a random AES key
-        $aesKey = random_bytes(32); 
+        // Generate a random 256-bit AES key
+        $aesKey = random_bytes(32);
+
+        // Generate a random Initialization Vector (IV)
+        $iv = random_bytes(16);
+
+        // Set up AES encryption in CBC mode
         $aes = new AES('cbc');
         $aes->setKey($aesKey);
-        $aes->setIV(random_bytes(16));
+        $aes->setIV($iv);
 
         // Encrypt the file contents using AES
         $encryptedData = $aes->encrypt($fileContents);
 
-        // Encrypt the AES key with the server's public key
+        // Encrypt the AES key with the client's public key
         $encryptedAesKey = $publicKey->encrypt($aesKey);
 
+        // Return the encrypted data, AES key, and IV
         return [
             'encrypted_data' => base64_encode($encryptedData),
             'encrypted_aes_key' => base64_encode($encryptedAesKey),
-            'iv' => base64_encode($aes->getIV()),
+            'iv' => base64_encode($iv),
         ];
     }
+
 
     // Decrypt file using hybrid decryption
     private function decryptFile($encryptedData, $encryptedAesKey, $iv)
@@ -147,6 +157,9 @@ class DocumentController extends Controller
             return response()->json(['message' => 'File integrity check failed.'], 403);
         }
     
+        // Extract file extension
+        $fileExtension = pathinfo($filePath, PATHINFO_EXTENSION);
+    
         // Encrypt the file using hybrid encryption
         $encryptedFile = $this->encryptFile($fileContents);
     
@@ -154,7 +167,10 @@ class DocumentController extends Controller
             'encrypted_data' => $encryptedFile['encrypted_data'],
             'encrypted_aes_key' => $encryptedFile['encrypted_aes_key'],
             'iv' => $encryptedFile['iv'],
+            'file_extension' => $fileExtension, // Add file extension to the response
         ]);
     }
+    
+    
     
 }

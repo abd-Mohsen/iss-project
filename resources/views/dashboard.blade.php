@@ -95,7 +95,7 @@
                 // Import the server's public key
                 const publicKey = await window.crypto.subtle.importKey(
                     'spki',
-                    convertPemToArrayBuffer(publicKeyPem),
+                    convertPemToArrayBufferUpload(publicKeyPem),
                     { name: 'RSA-OAEP', hash: 'SHA-256' },
                     false,
                     ['encrypt']
@@ -169,7 +169,7 @@
         }
 
         // Utility function to convert PEM to ArrayBuffer
-        function convertPemToArrayBuffer(pem) {
+        function convertPemToArrayBufferUpload(pem) {
             const pemHeader = "-----BEGIN PUBLIC KEY-----";
             const pemFooter = "-----END PUBLIC KEY-----";
             const pemContents = pem.replace(pemHeader, "").replace(pemFooter, "").replace(/\s+/g, "");
@@ -187,78 +187,22 @@
             return btoa(binary);
         }
 
-
-        // async function fetchServerPublicKey() {
-        //     try {
-        //         // Fetch the public key from the server
-        //         const publicKeyResponse = await fetch('/keys/server-public-key');
-                
-        //         if (!publicKeyResponse.ok) {
-        //             throw new Error('Failed to fetch server public key');
-        //         }
-
-        //         const publicKeyPem = await publicKeyResponse.text();
-        //         console.log("Public Key PEM:", publicKeyPem);
-
-        //         // Import the public key for use with WebCrypto
-        //         const publicKey = await window.crypto.subtle.importKey(
-        //             'spki', // Public key format
-        //             convertPemToArrayBuffer(publicKeyPem), // Convert PEM to ArrayBuffer
-        //             {
-        //                 name: 'RSA-OAEP',
-        //                 hash: 'SHA-256'
-        //             },
-        //             false, // Not extractable
-        //             ['encrypt']
-        //         );
-
-        //         return publicKey;
-        //     } catch (error) {
-        //         console.error('Error fetching or importing public key:', error.message);
-        //         throw error;
-        //     }
-        // }
-
-        // Utility to convert PEM to ArrayBuffer
-        // function convertPemToArrayBuffer(pem) {
-        //     // Remove PEM header/footer and line breaks
-        //     const pemHeader = "-----BEGIN PUBLIC KEY-----";
-        //     const pemFooter = "-----END PUBLIC KEY-----";
-        //     const pemContents = pem.replace(pemHeader, "").replace(pemFooter, "").replace(/\s+/g, "");
-        //     const binaryDerString = atob(pemContents); // Decode Base64
-        //     const binaryDer = new Uint8Array(binaryDerString.length);
-
-        //     for (let i = 0; i < binaryDerString.length; i++) {
-        //         binaryDer[i] = binaryDerString.charCodeAt(i);
-        //     }
-
-        //     return binaryDer.buffer;
-        // }
-
-
         // Helper function to import the server's public key
-        async function importServerPublicKey(pemKey) {
-            const pemContents = pemKey
-                .replace(/-----BEGIN PUBLIC KEY-----/, '')
-                .replace(/-----END PUBLIC KEY-----/, '')
-                .replace(/\s/g, '');
-            const binaryDerString = atob(pemContents);
-            const binaryDer = Uint8Array.from(binaryDerString, char => char.charCodeAt(0));
-            return await window.crypto.subtle.importKey(
-                'spki',
-                binaryDer.buffer,
-                { name: 'RSA-OAEP', hash: 'SHA-256' },
-                false,
-                ['encrypt']
-            );
-        }
-
-        // Helper function to convert ArrayBuffer to Base64
-        // function arrayBufferToBase64(buffer) {
-        //     const binary = String.fromCharCode(...new Uint8Array(buffer));
-        //     return btoa(binary);
+        // async function importServerPublicKey(pemKey) {
+        //     const pemContents = pemKey
+        //         .replace(/-----BEGIN PUBLIC KEY-----/, '')
+        //         .replace(/-----END PUBLIC KEY-----/, '')
+        //         .replace(/\s/g, '');
+        //     const binaryDerString = atiob(pemContents);
+        //     const binaryDer = Uint8Array.from(binaryDerString, char => char.charCodeAt(0));
+        //     return await window.crypto.subtle.importKey(
+        //         'spki',
+        //         binaryDer.buffer,
+        //         { name: 'RSA-OAEP', hash: 'SHA-256' },
+        //         false,
+        //         ['encrypt']
+        //     );
         // }
-
 
         async function searchDocuments() {
             const searchInput = document.getElementById('search_social_number');
@@ -298,11 +242,11 @@
                         <div class="mt-2 p-4 border border-gray-300 rounded-md bg-gray-800 text-white">
                             <p>Document ID: ${doc.id}</p>
                             <p>Uploaded At: ${doc.created_at}</p>
-                            <a 
-                                href="/documents/download/${doc.id}" 
-                                class="text-blue-400 underline">
+                            <button 
+                                class="text-blue-400 underline"
+                                onclick="downloadAndDecryptFile('${doc.id}')">
                                 Download
-                            </a>
+                            </button>
                         </div>
                     `).join('');
                     searchResults.innerHTML = documentsHtml;
@@ -318,6 +262,102 @@
                 searchLoadingIndicator.classList.add('hidden');
             }
         }
+
+
+        async function downloadAndDecryptFile(fileId) {
+            try {
+                // Step 1: Fetch the encrypted file from the server
+                const response = await fetch(`/documents/download/${fileId}`);
+                if (!response.ok) {
+                    throw new Error('Failed to download the file');
+                }
+
+                console.log("before json");
+                const {
+                    encrypted_data,
+                    encrypted_aes_key,
+                    iv,
+                    file_extension, // Receive the file extension from the server
+                } = await response.json();
+
+                console.log("after json");
+
+                // Step 2: Fetch the user's private key (or use it from memory)
+                const privateKeyPem = await promptUserForPrivateKey();
+                
+                const privateKey = await window.crypto.subtle.importKey(
+                    'pkcs8',
+                    convertPemToArrayBuffer(privateKeyPem),
+                    { name: 'RSA-OAEP', hash: 'SHA-256' },
+                    false,
+                    ['decrypt']
+                );
+
+                // Step 3: Decrypt the AES key using the private RSA key
+                const aesKeyBuffer = await window.crypto.subtle.decrypt(
+                    { name: 'RSA-OAEP' },
+                    privateKey,
+                    base64ToArrayBuffer(encrypted_aes_key)
+                );
+
+                // Step 4: Decrypt the file using AES-CBC
+                const aesKey = await window.crypto.subtle.importKey(
+                    'raw',
+                    aesKeyBuffer,
+                    { name: 'AES-CBC', length: 256 },
+                    false,
+                    ['decrypt']
+                );
+
+                const decryptedFile = await window.crypto.subtle.decrypt(
+                    {
+                        name: 'AES-CBC',
+                        iv: base64ToArrayBuffer(iv),
+                    },
+                    aesKey,
+                    base64ToArrayBuffer(encrypted_data)
+                );
+
+                // Step 5: Download the decrypted file with the correct extension
+                const blob = new Blob([new Uint8Array(decryptedFile)]);
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                
+                // Set the filename to include the extension received from the server
+                const fileName = `downloaded_file.${file_extension}`; // Use file_extension received from the server
+                link.download = fileName; // Set the download attribute to the filename with the extension
+                link.click(); // Trigger the download
+            } catch (error) {
+                console.error('Error downloading or decrypting file:', error.message);
+                alert('An error occurred: ' + error.message);
+            }
+        }
+
+
+        // Utility function to convert Base64 to ArrayBuffer
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // Utility function to convert PEM to ArrayBuffer
+        function convertPemToArrayBuffer(pem) {
+            const pemHeader = "-----BEGIN PRIVATE KEY-----";
+            const pemFooter = "-----END PRIVATE KEY-----";
+            const pemContents = pem.replace(pemHeader, "").replace(pemFooter, "").replace(/\s+/g, "");
+            const binaryDerString = atob(pemContents);
+            const binaryDer = new Uint8Array(binaryDerString.length);
+            for (let i = 0; i < binaryDerString.length; i++) {
+                binaryDer[i] = binaryDerString.charCodeAt(i);
+            }
+            return binaryDer.buffer;
+        }
+
 
     </script>
 </x-app-layout>
