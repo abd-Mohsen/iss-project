@@ -278,6 +278,7 @@
                     encrypted_aes_key,
                     iv,
                     file_extension, // Receive the file extension from the server
+                    signature, // Receive the signature from the server
                 } = await response.json();
 
                 console.log("after json");
@@ -328,8 +329,35 @@
                 const fileName = `downloaded_file.${file_extension}`; // Use file_extension received from the server
                 link.download = fileName; // Set the download attribute to the filename with the extension
                 link.click(); // Trigger the download
+
+                // Step 6: Verify the signature after downloading
+                const formData = new FormData();
+                formData.append("file", new Blob([new Uint8Array(decryptedFile)]));
+                formData.append("signature", signature);
+
+                const verifyResponse = await fetch('http://localhost:5000/verify_signature', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        //'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'accept': 'application/json'
+                    },
+                });
+
+                if (!verifyResponse.ok) {
+                    //throw new Error('Signature verification failed');
+                    console.log(await verifyResponse.text());
+                    return;
+                }
+
+                const verificationResult = await verifyResponse.json();
+                console.log('Signature Verification Result:', verificationResult);
+
+                // Optionally display the result to the user
+                alert(verificationResult.is_valid ? 'Signature is valid' : 'Signature is invalid');
+                
             } catch (error) {
-                console.error('Error downloading or decrypting file:', error.message);
+                console.error('Error downloading, decrypting, or verifying signature:', error.message);
                 alert('An error occurred: ' + error.message);
             }
         }

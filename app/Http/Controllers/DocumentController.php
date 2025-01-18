@@ -190,6 +190,7 @@ class DocumentController extends Controller
             'encrypted_aes_key' => $encryptedFile['encrypted_aes_key'],
             'iv' => $encryptedFile['iv'],
             'file_extension' => $fileExtension, // Add file extension to the response
+            'signature' => $document->signature,
         ]);
     }
     
